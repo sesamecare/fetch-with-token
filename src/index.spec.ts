@@ -3,7 +3,7 @@ import { OAuth2Server } from 'oauth2-mock-server';
 
 import { createFetchFunction } from './index';
 
-describe('tokenized-fetch', () => {
+describe('fetch-with-token', () => {
   const server = new OAuth2Server();
 
   beforeAll(async () => {
