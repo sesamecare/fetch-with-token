@@ -83,8 +83,7 @@ describe('fetch-with-token', () => {
       ]
     `);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function mockIntrospect(introspectResponse: any) {
+    function mockIntrospect(introspectResponse: Record<string, unknown>) {
       introspectResponse.statusCode = 401;
       introspectResponse.body = { active: false };
     }
