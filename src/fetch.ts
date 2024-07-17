@@ -32,11 +32,14 @@ export function createFetchFunction<TokenType extends AbstractToken = AbstractTo
     if (!tokenResolver) {
       const lastToken = currentToken;
       currentToken = undefined;
-      tokenResolver = getToken(lastToken).then((token) => {
-        currentToken = token;
-        tokenResolver = undefined;
-        return currentToken;
-      });
+      tokenResolver = getToken(lastToken)
+        .then((token) => {
+          currentToken = token;
+          return currentToken;
+        })
+        .finally(() => {
+          tokenResolver = undefined;
+        });
     }
     return tokenResolver;
   }

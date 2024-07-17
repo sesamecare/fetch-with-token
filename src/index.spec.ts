@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { OAuth2Server } from 'oauth2-mock-server';
 
 import { createFetchFunction } from './index';
@@ -43,12 +43,14 @@ describe('fetch-with-token', () => {
     });
 
     async function introspect() {
-      return fetcher('http://localhost:20230/introspect', { method: 'POST' }).then(async (response) => {
-        return {
-          status: response.status,
-          json: await response.json(),
-        };
-      });
+      return fetcher('http://localhost:20230/introspect', { method: 'POST' }).then(
+        async (response) => {
+          return {
+            status: response.status,
+            json: await response.json(),
+          };
+        },
+      );
     }
 
     await expect(introspect()).resolves.toEqual({ status: 200, json: { active: true } });
@@ -62,10 +64,7 @@ describe('fetch-with-token', () => {
       introspectResponse.body = { active: false };
     });
 
-    const double = await Promise.all([
-      introspect(),
-      introspect(),
-    ]);
+    const double = await Promise.all([introspect(), introspect()]);
     expect(getCount, 'should have refreshed the token once').toBe(2);
     expect(double).toMatchInlineSnapshot(`
       [
@@ -84,11 +83,59 @@ describe('fetch-with-token', () => {
       ]
     `);
 
-    server.service.on('beforeIntrospect', (introspectResponse) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function mockIntrospect(introspectResponse: any) {
       introspectResponse.statusCode = 401;
       introspectResponse.body = { active: false };
+    }
+
+    server.service.on('beforeIntrospect', mockIntrospect);
+    await expect(introspect(), 'should not retry infinitely').resolves.toEqual({
+      status: 401,
+      json: { active: false },
     });
-    await expect(introspect(), 'should not retry infinitely').resolves.toEqual({ status: 401, json: { active: false } });
+    server.service.off('beforeIntrospect', mockIntrospect);
     expect(getCount, 'should have attempted to refresh 2 more times').toBe(4);
+  });
+
+  test('should handle errors in `fetchToken`', async () => {
+    const getToken = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Failed to fetch token'))
+      .mockImplementation(async () => {
+        const response = await fetch('http://localhost:20230/token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            grant_type: 'client_credentials',
+            scope: 'urn:read',
+          }).toString(),
+        });
+        const token = await response.json();
+        return {
+          value: token.access_token,
+          expiration: new Date(Date.now() + token.expires_in),
+        };
+      });
+
+    const fetcher = createFetchFunction({
+      getToken,
+    });
+
+    async function introspect() {
+      return fetcher('http://localhost:20230/introspect', { method: 'POST' }).then(
+        async (response) => {
+          return {
+            status: response.status,
+            json: await response.json(),
+          };
+        },
+      );
+    }
+
+    await expect(introspect()).rejects.toThrowError('Failed to fetch token');
+    await expect(introspect()).resolves.toEqual({ status: 200, json: { active: true } });
   });
 });
